@@ -1,0 +1,8 @@
+{
+  "name": "VitalVoice AI",
+  "description": "A multimodal health screening application analyzing voice and facial biomarkers using Gemini 2.5 Flash.",
+  "requestFramePermissions": [
+    "camera",
+    "microphone"
+  ]
+}
