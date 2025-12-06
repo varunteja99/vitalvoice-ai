@@ -1,4 +1,5 @@
 import React, { useState, useRef, useEffect, useCallback, useLayoutEffect } from 'react';
+import { createRoot } from 'react-dom/client';
 import { AppScreen, HealthAnalysis, ChatMessage } from './types';
 import { analyzeHealth, chatWithHealthAssistant } from './services/geminiService';
 import Waveform from './components/Waveform';
@@ -130,41 +131,29 @@ const TourOverlay: React.FC<{
       width: 'calc(100vw - 48px)', // Requested width logic
       minWidth: '340px',          // Requested min-width
       maxWidth: '400px',          // Requested max-width
-      maxHeight: 'calc(100vh - 48px)', // Prevent overflow on mobile
-      overflowY: 'auto' as const,
       margin: 0,
     };
   } else {
     // Desktop Strategy: Float near element or Center
-    const PADDING = 20;
+    const PADDING = 20; 
     const MAX_WIDTH = 380;
     const tooltipWidth = Math.min(MAX_WIDTH, windowDimensions.width - (PADDING * 2));
-
+    
     if (targetRect) {
         let left = targetRect.left + (targetRect.width / 2) - (tooltipWidth / 2);
         left = Math.max(PADDING, Math.min(left, windowDimensions.width - tooltipWidth - PADDING));
-
+        
         const spaceBelow = windowDimensions.height - targetRect.bottom;
         const spaceAbove = targetRect.top;
-        const tooltipHeightEst = 280; // Increased estimate for actual content height
+        const tooltipHeightEst = 240;
 
         let top: number | undefined;
         let bottom: number | undefined;
 
         if (spaceBelow >= tooltipHeightEst || spaceBelow > spaceAbove) {
-            // Position below target
             top = targetRect.bottom + 24;
-            // Ensure it doesn't go off the bottom
-            if (top + tooltipHeightEst > windowDimensions.height - PADDING) {
-                top = Math.max(PADDING, windowDimensions.height - tooltipHeightEst - PADDING);
-            }
         } else {
-            // Position above target
-            top = targetRect.top - tooltipHeightEst - 24;
-            // Ensure it doesn't go off the top
-            if (top < PADDING) {
-                top = PADDING;
-            }
+            bottom = windowDimensions.height - targetRect.top + 24;
         }
 
         tooltipStyle = {
@@ -173,8 +162,7 @@ const TourOverlay: React.FC<{
             width: tooltipWidth,
             left: left,
             top: top,
-            maxHeight: `calc(100vh - ${PADDING * 2}px)`,
-            overflowY: 'auto' as const,
+            bottom: bottom,
         };
     } else {
         // Centered for steps without target on Desktop
@@ -185,8 +173,6 @@ const TourOverlay: React.FC<{
             left: '50%',
             top: '50%',
             transform: 'translate(-50%, -50%)',
-            maxHeight: `calc(100vh - ${PADDING * 2}px)`,
-            overflowY: 'auto' as const,
         };
     }
   }
@@ -1276,5 +1262,12 @@ const App: React.FC = () => {
     </div>
   );
 };
+
+// Root rendering
+const rootElement = document.getElementById('root');
+if (rootElement) {
+  const root = createRoot(rootElement);
+  root.render(<App />);
+}
 
 export default App;
