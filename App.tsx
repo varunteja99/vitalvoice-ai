@@ -2,8 +2,39 @@ import React, { useState, useRef, useEffect, useCallback, useLayoutEffect } from
 import { createRoot } from 'react-dom/client';
 import { AppScreen, HealthAnalysis, ChatMessage } from './types';
 import { analyzeHealth, chatWithHealthAssistant } from './services/geminiService';
+import { generatePDF } from './services/pdfService';
 import Waveform from './components/Waveform';
 import ResultCard from './components/ResultCard';
+
+// --- Sample Data for Demo ---
+const SAMPLE_ANALYSIS_RESULT: HealthAnalysis = {
+  overall_wellness_score: 82,
+  confidence_level: 'high',
+  summary: "The analysis indicates a robust vocal profile with strong respiratory support and clear articulation. Neurological markers are stable with no signs of tremors or dysarthria. Mental health indicators suggest a positive and engaged emotional state.",
+  disclaimer: "This is a demonstration result based on clinical sample data. Not a medical diagnosis.",
+  domain_scores: {
+    neurological: { score: 88, concern_level: 'low', indicators: ['Stable pitch', 'No micro-tremors', 'Regular rate'], explanation: 'High vocal stability suggests excellent neuromotor control.' },
+    mental_health: { score: 78, concern_level: 'low', indicators: ['High energy', 'Varied intonation'], explanation: 'Speech patterns indicate positive emotional engagement and low stress.' },
+    respiratory: { score: 92, concern_level: 'low', indicators: ['Sustained phonation', 'Clear breath'], explanation: 'Excellent respiratory capacity detected with no audible gasping.' },
+    cardiovascular: { score: 81, concern_level: 'low', indicators: ['Regular rhythm'], explanation: 'No arrhythmic patterns observed in speech breathing cycles.' },
+    metabolic: { score: 72, concern_level: 'moderate', indicators: ['Slight fatigue markers'], explanation: 'Minor signs of vocal fatigue detected, possibly hydration-related.' },
+    hydration: { score: 85, concern_level: 'low', indicators: ['Clear tone', 'Low jitter'], explanation: 'Vocal folds appear well-hydrated based on acoustic clarity.' },
+  },
+  key_observations: [
+    { finding: "High vocal stability (Jitter < 0.5%)", significance: "Indicates healthy neuromotor function", confidence: "high" },
+    { finding: "Consistent speech rate (140 wpm)", significance: "Normal cognitive processing speed", confidence: "high" },
+    { finding: "Harmonic-to-Noise Ratio > 20dB", significance: "Clear, efficient phonation", confidence: "high" }
+  ],
+  recommendations: [
+    { action: "Maintain current hydration", urgency: "routine", reason: "Supports optimal vocal fold mucosal wave" },
+    { action: "Monitor fatigue levels", urgency: "soon", reason: "Slight metabolic strain detected in lower registers" }
+  ],
+  trends: {
+    improving: ["Respiratory support", "Pitch range"],
+    stable: ["Neurological markers", "Cardiovascular health"],
+    needs_attention: []
+  }
+};
 
 // --- Components ---
 
@@ -37,243 +68,311 @@ const MarkdownRenderer: React.FC<{ content: string }> = ({ content }) => {
   return <div className="markdown-content">{processText(content)}</div>;
 };
 
-// Tour Guide Data
-const TOUR_STEPS = [
-  {
-    target: null, // Center
-    title: "Welcome to VitalVoice AI",
-    content: "This app uses advanced AI to analyze health biomarkers using your voice and face. Let's take a quick tour!"
-  },
-  {
-    target: "start-btn",
-    title: "Voice Screening",
-    content: "Tap here to begin. You'll be asked to answer a simple question while our AI analyzes your speech patterns."
-  },
-  {
-    target: "upload-btn", 
-    title: "Face Scan Feature",
-    content: "For higher accuracy, you can opt-in to a face scan. This detects visual signs like fatigue and pallor."
-  },
-  {
-    target: null, // Center
-    title: "AI Analysis",
-    content: "Powered by Gemini 3 Pro, the app correlates audio and visual data to provide a comprehensive wellness score."
-  },
-  {
-    target: null, // Center
-    title: "Privacy & Getting Started",
-    content: "Your health data is processed securely and is never stored without your explicit consent. Ready to start?"
-  }
-];
-
-// Tour Overlay Component
-const TourOverlay: React.FC<{ 
-  stepIndex: number; 
-  onNext: () => void; 
-  onPrev: () => void; 
-  onSkip: () => void; 
-}> = ({ stepIndex, onNext, onPrev, onSkip }) => {
-  const [targetRect, setTargetRect] = useState<DOMRect | null>(null);
-  const [windowDimensions, setWindowDimensions] = useState({ width: window.innerWidth, height: window.innerHeight });
-  const step = TOUR_STEPS[stepIndex];
-  
-  // Check if mobile for responsive layout
-  const isMobile = windowDimensions.width < 768;
-
-  useLayoutEffect(() => {
-    const updatePosition = () => {
-      setWindowDimensions({ width: window.innerWidth, height: window.innerHeight });
-      if (step.target) {
-        const el = document.querySelector(`[data-tour="${step.target}"]`);
-        if (el) {
-          el.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'center' });
-          setTargetRect(el.getBoundingClientRect());
-        } else {
-          setTargetRect(null);
-        }
-      } else {
-        setTargetRect(null);
-      }
-    };
-
-    updatePosition();
-    
-    const handleScrollOrResize = () => {
-        setWindowDimensions({ width: window.innerWidth, height: window.innerHeight });
-        if (step.target) {
-            const el = document.querySelector(`[data-tour="${step.target}"]`);
-            if (el) setTargetRect(el.getBoundingClientRect());
-        }
-    };
-
-    window.addEventListener('resize', handleScrollOrResize);
-    window.addEventListener('scroll', handleScrollOrResize, true);
-    
-    return () => {
-        window.removeEventListener('resize', handleScrollOrResize);
-        window.removeEventListener('scroll', handleScrollOrResize, true);
-    };
-  }, [stepIndex]);
-
-  // Determine styles based on screen size
-  let tooltipStyle: React.CSSProperties = {
-      position: 'fixed',
-      zIndex: 101,
-  };
-
-  if (isMobile) {
-    // Mobile Strategy: Centered Modal with User Requested Dimensions
-    tooltipStyle = {
-      ...tooltipStyle,
-      top: '50%',
-      left: '50%',
-      transform: 'translate(-50%, -50%)',
-      width: 'calc(100vw - 48px)', // Requested width logic
-      minWidth: '340px',          // Requested min-width
-      maxWidth: '400px',          // Requested max-width
-      margin: 0,
-    };
-  } else {
-    // Desktop Strategy: Float near element or Center
-    const PADDING = 20; 
-    const MAX_WIDTH = 380;
-    const tooltipWidth = Math.min(MAX_WIDTH, windowDimensions.width - (PADDING * 2));
-    
-    if (targetRect) {
-        let left = targetRect.left + (targetRect.width / 2) - (tooltipWidth / 2);
-        left = Math.max(PADDING, Math.min(left, windowDimensions.width - tooltipWidth - PADDING));
-        
-        const spaceBelow = windowDimensions.height - targetRect.bottom;
-        const spaceAbove = targetRect.top;
-        const tooltipHeightEst = 240;
-
-        let top: number | undefined;
-        let bottom: number | undefined;
-
-        if (spaceBelow >= tooltipHeightEst || spaceBelow > spaceAbove) {
-            top = targetRect.bottom + 24;
-        } else {
-            bottom = windowDimensions.height - targetRect.top + 24;
-        }
-
-        tooltipStyle = {
-            ...tooltipStyle,
-            position: 'absolute',
-            width: tooltipWidth,
-            left: left,
-            top: top,
-            bottom: bottom,
-        };
-    } else {
-        // Centered for steps without target on Desktop
-        tooltipStyle = {
-            ...tooltipStyle,
-            position: 'absolute',
-            width: tooltipWidth,
-            left: '50%',
-            top: '50%',
-            transform: 'translate(-50%, -50%)',
-        };
-    }
-  }
-
-  const isLast = stepIndex === TOUR_STEPS.length - 1;
-  const isFirst = stepIndex === 0;
-
-  return (
-    <div className="fixed inset-0 z-[100] overflow-hidden">
-      {/* Dimmed Background */}
-      <div 
-        className="absolute inset-0 transition-all duration-500 ease-in-out"
-        style={{
-          boxShadow: targetRect 
-            ? `0 0 0 9999px rgba(0, 0, 0, 0.8)`
-            : `0 0 0 9999px rgba(0, 0, 0, 0.8)`,
-          backgroundColor: targetRect ? 'transparent' : 'rgba(0,0,0,0.8)',
-          // Spotlight calculation
-          top: targetRect ? targetRect.top - 8 : '50%',
-          left: targetRect ? targetRect.left - 8 : '50%',
-          width: targetRect ? targetRect.width + 16 : 0,
-          height: targetRect ? targetRect.height + 16 : 0,
-          borderRadius: '16px',
-          position: 'absolute'
-        }}
-      >
-          {targetRect && (
-              <div className="absolute inset-0 rounded-[16px] ring-2 ring-[#A8C7FA] animate-pulse shadow-[0_0_30px_rgba(168,199,250,0.2)]"></div>
-          )}
-      </div>
-
-      {/* Tooltip Card */}
-      <div 
-        className="bg-[#1E1F20] border border-[#444746] rounded-2xl shadow-2xl flex flex-col animate-fade-in-up overflow-hidden"
-        style={tooltipStyle}
-      >
-        <div className="flex flex-col h-full" style={{ padding: '24px' }}> {/* Requested Padding 24px */}
-            {/* Header / Steps */}
-            <div className="flex justify-between items-start mb-4">
-                <div className="bg-[#A8C7FA]/10 text-[#A8C7FA] px-2.5 py-1 rounded text-xs font-bold tracking-wide">
-                    STEP {stepIndex + 1} / {TOUR_STEPS.length}
-                </div>
-            </div>
-            
-            {/* Content */}
-            <div className="mb-6">
-                <h3 
-                    className="text-xl font-bold text-white mb-3 break-words"
-                    style={{ wordWrap: 'break-word', whiteSpace: 'normal', lineHeight: '1.3' }}
-                >
-                    {step.title}
-                </h3>
-                <p 
-                    className="text-[#C4C7C5] text-base leading-relaxed break-words"
-                    style={{ wordWrap: 'break-word', whiteSpace: 'normal', overflowWrap: 'break-word' }}
-                >
-                    {step.content}
-                </p>
-            </div>
-
-            {/* Footer Navigation */}
-            <div className="flex justify-between items-center pt-2 mt-auto">
-                {/* Left Button: Skip (Step 1) or Back (Step 2+) */}
-                {isFirst ? (
-                    <button 
-                        onClick={onSkip} 
-                        className="text-gray-400 hover:text-white font-medium px-2 py-2 transition-colors text-sm"
-                    >
-                        Skip
-                    </button>
-                ) : (
-                    <button 
-                        onClick={onPrev} 
-                        className="text-gray-400 hover:text-white font-medium px-2 py-2 transition-colors text-sm flex items-center gap-1"
-                    >
-                        Back
-                    </button>
-                )}
-
-                {/* Pagination Dots (Center) */}
-                <div className="flex gap-1.5 mx-4">
-                    {TOUR_STEPS.map((_, i) => (
-                        <div 
-                            key={i} 
-                            className={`h-1.5 rounded-full transition-all duration-300 ${i === stepIndex ? 'w-5 bg-[#A8C7FA]' : 'w-1.5 bg-[#444746]'}`}
-                        />
-                    ))}
-                </div>
-
-                {/* Right Button: Next or Get Started */}
-                <button 
-                    onClick={onNext}
-                    className="bg-[#A8C7FA] text-[#041E49] px-6 py-2.5 rounded-full text-sm font-bold hover:bg-[#D3E3FD] transition-colors shadow-lg whitespace-nowrap"
-                >
-                    {isLast ? "Get Started" : "Next"}
+// Tech Specs Modal
+const TechModal: React.FC<{ onClose: () => void }> = ({ onClose }) => (
+    <div className="fixed inset-0 z-[150] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
+        <div className="bg-[#1E1F20] w-full max-w-2xl rounded-[24px] border border-[#444746] shadow-2xl flex flex-col max-h-[90vh]">
+            <div className="p-6 border-b border-[#444746] flex justify-between items-center">
+                <h2 className="text-2xl font-normal text-white flex items-center gap-2">
+                    <span className="material-symbol text-[#A8C7FA]">code</span>
+                    Technical Architecture
+                </h2>
+                <button onClick={onClose} className="text-gray-400 hover:text-white">
+                    <span className="material-symbol">close</span>
                 </button>
             </div>
+            <div className="p-6 overflow-y-auto space-y-6">
+                <div>
+                    <h3 className="text-[#A8C7FA] font-bold uppercase text-xs tracking-wider mb-2">AI Models Used</h3>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                        <div className="bg-[#131314] p-4 rounded-xl border border-[#444746]">
+                            <div className="font-bold text-white mb-1">Gemini 2.5 Flash</div>
+                            <div className="text-sm text-gray-400">Low-latency multimodal analysis of audio (PCM) and video frames.</div>
+                        </div>
+                        <div className="bg-[#131314] p-4 rounded-xl border border-[#444746]">
+                            <div className="font-bold text-white mb-1">Gemini 3 Pro (Preview)</div>
+                            <div className="text-sm text-gray-400">Complex reasoning for clinical correlation and trend analysis.</div>
+                        </div>
+                    </div>
+                </div>
+
+                <div>
+                    <h3 className="text-[#A8C7FA] font-bold uppercase text-xs tracking-wider mb-2">Data Pipeline</h3>
+                    <div className="flex flex-col gap-2">
+                         <div className="flex items-center gap-3 text-sm text-gray-300">
+                            <span className="material-symbol text-emerald-400">mic</span>
+                            <span>Raw Audio (WebM/PCM) Capture</span>
+                         </div>
+                         <div className="h-4 border-l border-dashed border-gray-600 ml-3"></div>
+                         <div className="flex items-center gap-3 text-sm text-gray-300">
+                             <span className="material-symbol text-purple-400">transform</span>
+                             <span>Client-side Base64 Encoding</span>
+                         </div>
+                         <div className="h-4 border-l border-dashed border-gray-600 ml-3"></div>
+                         <div className="flex items-center gap-3 text-sm text-gray-300">
+                             <span className="material-symbol text-blue-400">cloud</span>
+                             <span>Gemini API Multimodal Request</span>
+                         </div>
+                         <div className="h-4 border-l border-dashed border-gray-600 ml-3"></div>
+                         <div className="flex items-center gap-3 text-sm text-gray-300">
+                             <span className="material-symbol text-orange-400">data_object</span>
+                             <span>Structured JSON Response</span>
+                         </div>
+                    </div>
+                </div>
+
+                <div>
+                    <h3 className="text-[#A8C7FA] font-bold uppercase text-xs tracking-wider mb-2">Sample API Request</h3>
+                    <pre className="bg-[#131314] p-4 rounded-xl border border-[#444746] text-xs text-gray-300 font-mono overflow-x-auto">
+{`const response = await ai.models.generateContent({
+  model: "gemini-2.5-flash",
+  contents: {
+    parts: [
+      { text: "Analyze for vocal biomarkers..." },
+      { inlineData: { mimeType: "audio/webm", data: audioB64 } }
+    ]
+  },
+  config: { responseSchema: HEALTH_SCHEMA }
+});`}
+                    </pre>
+                </div>
+            </div>
+            <div className="p-6 border-t border-[#444746] bg-[#262728] rounded-b-[24px]">
+                 <p className="text-xs text-center text-gray-500">Based on research papers regarding acoustic analysis of vocal biomarkers in neurology.</p>
+            </div>
         </div>
-      </div>
     </div>
-  );
+);
+
+// High-End Cinematic Demo Modal (Apple-style Ad Simulator)
+const CinematicDemoModal: React.FC<{ onClose: () => void }> = ({ onClose }) => {
+    const [currentTime, setCurrentTime] = useState(0);
+    const [isPlaying, setIsPlaying] = useState(true);
+    
+    // 15 Seconds Duration (15,000 ms) - TIGHT EDIT
+    const DURATION = 15000; 
+
+    useEffect(() => {
+        let animationFrameId: number;
+        let lastTimestamp: number;
+
+        const loop = (timestamp: number) => {
+            if (!lastTimestamp) lastTimestamp = timestamp;
+            const delta = timestamp - lastTimestamp;
+            
+            if (isPlaying) {
+                setCurrentTime(prev => {
+                    const next = prev + delta;
+                    if (next >= DURATION) {
+                        return DURATION; // Stop at end
+                    }
+                    return next;
+                });
+            }
+            lastTimestamp = timestamp;
+            animationFrameId = requestAnimationFrame(loop);
+        };
+
+        if (isPlaying && currentTime < DURATION) {
+            animationFrameId = requestAnimationFrame(loop);
+        }
+
+        return () => cancelAnimationFrame(animationFrameId);
+    }, [isPlaying, currentTime]);
+
+    const formatTime = (ms: number) => {
+        const totalSeconds = Math.floor(ms / 1000);
+        const mins = Math.floor(totalSeconds / 60);
+        const secs = totalSeconds % 60;
+        return `${mins}:${secs.toString().padStart(2, '0')}`;
+    };
+
+    const restart = () => {
+        setCurrentTime(0);
+        setIsPlaying(true);
+    };
+
+    // Helper to check precise time ranges
+    const isBetween = (startS: number, endS: number) => {
+        const ms = currentTime;
+        return ms >= startS * 1000 && ms < endS * 1000;
+    };
+
+    // Helper for Narration Text (Subtitle) - Compressed for 15s
+    const getNarration = () => {
+        const ms = currentTime;
+        // Act 1 (0-2.5s)
+        if (ms < 2500) return "Millions discover health issues too late.";
+        // Act 2 (2.5-5s)
+        if (ms < 5000) return "VitalVoice AI detects hidden biomarkers instantly.";
+        // Act 3 (5-11s)
+        if (ms < 8000) return "Just record your voice for 30 seconds.";
+        if (ms < 11000) return "Gemini analyzes tremor, pitch, and rhythm.";
+        // Act 4 (11-13s)
+        if (ms < 13000) return "Powered by Gemini 3 Pro multimodal intelligence.";
+        // Act 5 (13-15s)
+        if (ms < 15000) return "Accessible healthcare for everyone.";
+        return "";
+    }
+
+    return (
+        <div className="fixed inset-0 z-[200] bg-black flex flex-col items-center justify-center font-sans overflow-hidden">
+            {/* Cinematic Container */}
+            <div className="relative w-full h-full max-w-[100vw] max-h-[100vh] flex flex-col items-center justify-center">
+                
+                {/* ================= ACT 1: THE PROBLEM (0s - 2.5s) ================= */}
+                {isBetween(0, 2.5) && (
+                    <div className="absolute inset-0 flex flex-col items-center justify-center text-center animate-fade-in-up px-6 bg-black">
+                         <div className="animate-fade-in-up">
+                             <h1 className="text-6xl font-bold text-white tracking-tighter mb-2">Too Late?</h1>
+                             <p className="text-xl text-red-400 font-medium">Early Detection Matters</p>
+                         </div>
+                    </div>
+                )}
+
+
+                {/* ================= ACT 2: THE SOLUTION (2.5s - 5s) ================= */}
+                {isBetween(2.5, 5) && (
+                    <div className="absolute inset-0 flex flex-col items-center justify-center animate-fade-in-up bg-[#050505]">
+                         <div className="text-center animate-fade-in-up">
+                             <span className="material-symbol text-8xl text-transparent bg-clip-text bg-gradient-to-tr from-[#4285F4] to-[#9B72CB] transform scale-125 animate-pulse mb-4">graphic_eq</span>
+                             <h1 className="text-4xl font-semibold text-white tracking-tight">VitalVoice AI</h1>
+                         </div>
+                    </div>
+                )}
+
+
+                {/* ================= ACT 3: THE DEMO (Phone Sim) (5s - 11s) ================= */}
+                {isBetween(5, 11) && (
+                    <div className="absolute inset-0 flex items-center justify-center bg-[#0a0a0a]">
+                        {/* Phone Frame */}
+                        <div className="relative w-[300px] h-[600px] md:w-[375px] md:h-[750px] bg-black rounded-[48px] border-[8px] border-[#333] shadow-2xl overflow-hidden transform transition-all duration-500 scale-90 md:scale-100">
+                             <div className="absolute top-0 left-1/2 -translate-x-1/2 w-32 h-7 bg-black rounded-b-2xl z-30"></div>
+                             
+                             <div className="w-full h-full bg-[#131314] relative flex flex-col">
+                                
+                                {/* 5-7.5s: RECORDING */}
+                                {isBetween(5, 7.5) && (
+                                    <div className="flex-1 flex flex-col items-center justify-center p-6 animate-fade-in-up">
+                                        <div className="text-sm text-[#A8C7FA] uppercase font-bold mb-8 tracking-widest">Listening...</div>
+                                        <div className="w-full h-32 mb-8"><Waveform isRecording={true} /></div>
+                                    </div>
+                                )}
+
+                                {/* 7.5-9s: PROCESSING */}
+                                {isBetween(7.5, 9) && (
+                                    <div className="flex-1 flex flex-col items-center justify-center p-6 text-center animate-fade-in-up">
+                                         <div className="relative w-32 h-32 mb-8">
+                                             <svg className="animate-spin w-full h-full text-[#A8C7FA]" viewBox="0 0 24 24">
+                                                 <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="2" fill="none" strokeDasharray="30 60" />
+                                             </svg>
+                                             <div className="absolute inset-0 flex items-center justify-center">
+                                                 <span className="material-symbol text-4xl text-white">neurology</span>
+                                             </div>
+                                         </div>
+                                         <div className="text-[#A8C7FA] text-sm font-mono">Analyzing...</div>
+                                    </div>
+                                )}
+
+                                {/* 9-11s: RESULTS */}
+                                {isBetween(9, 11) && (
+                                    <div className="flex-1 bg-[#131314] p-6 animate-fade-in-up overflow-hidden relative">
+                                        <div className="flex justify-between items-center mb-6">
+                                            <h2 className="text-xl font-bold text-white">Insights</h2>
+                                            <div className="bg-[#1E1F20] px-3 py-1 rounded-full text-xs text-gray-400">Today</div>
+                                        </div>
+                                        <div className="bg-[#1E1F20] rounded-3xl p-6 mb-4 border border-[#333] flex items-center justify-between">
+                                            <div>
+                                                <div className="text-5xl font-bold text-white">88</div>
+                                                <div className="text-xs text-[#A8C7FA] uppercase tracking-wider mt-1">Wellness Score</div>
+                                            </div>
+                                            <div className="w-12 h-12 bg-emerald-500/10 rounded-full flex items-center justify-center">
+                                                <span className="material-symbol text-emerald-400">check</span>
+                                            </div>
+                                        </div>
+                                        <div className="grid grid-cols-2 gap-3">
+                                            <div className="bg-[#1E1F20] p-4 rounded-2xl border border-[#333]">
+                                                <span className="material-symbol text-[#A8C7FA] mb-2">neurology</span>
+                                                <div className="text-sm text-white font-medium">Neuro</div>
+                                                <div className="text-xs text-emerald-400">Stable</div>
+                                            </div>
+                                            <div className="bg-[#1E1F20] p-4 rounded-2xl border border-[#333]">
+                                                <span className="material-symbol text-[#A8C7FA] mb-2">pulmonology</span>
+                                                <div className="text-sm text-white font-medium">Respo</div>
+                                                <div className="text-xs text-yellow-400">Monitor</div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                )}
+                             </div>
+                        </div>
+                    </div>
+                )}
+
+
+                {/* ================= ACT 4: TECHNICAL CREDIBILITY (11s - 13s) ================= */}
+                {isBetween(11, 13) && (
+                    <div className="absolute inset-0 flex flex-col items-center justify-center bg-[#050505] px-6">
+                         <div className="grid grid-cols-3 gap-8 animate-fade-in-up mb-6">
+                             {['graphic_eq', 'visibility', 'psychology'].map((icon, i) => (
+                                 <div key={i} className="flex flex-col items-center">
+                                     <span className="material-symbol text-5xl text-[#A8C7FA] mb-2">{icon}</span>
+                                 </div>
+                             ))}
+                         </div>
+                         <div className="text-gray-400 text-xs font-mono border border-gray-800 px-3 py-1 rounded">GEMINI 3 PRO</div>
+                    </div>
+                )}
+
+
+                {/* ================= ACT 5: IMPACT & VISION (13s - 15s) ================= */}
+                {isBetween(13, 15.5) && (
+                    <div className="absolute inset-0 flex flex-col items-center justify-center text-center px-6 bg-black">
+                        <div className="animate-fade-in-up">
+                            <span className="material-symbol text-8xl text-transparent bg-clip-text bg-gradient-to-tr from-[#4285F4] to-[#9B72CB] mb-4">graphic_eq</span>
+                            <h1 className="text-3xl font-medium text-white mb-2">VitalVoice AI</h1>
+                            <div className="text-[#A8C7FA] opacity-80 text-xs mb-6">vitalvoiceai.varunchundru.com</div>
+                            
+                            <button onClick={restart} className="text-gray-600 hover:text-white flex items-center gap-2 transition-colors text-xs justify-center mx-auto">
+                                <span className="material-symbol text-base">replay</span> Replay
+                            </button>
+                        </div>
+                    </div>
+                )}
+
+
+                {/* ================= GLOBAL OVERLAYS ================= */}
+                
+                {/* Narration Subtitles */}
+                <div className="absolute bottom-16 left-0 right-0 text-center px-4 pointer-events-none">
+                    <p className="text-white/90 text-lg font-medium drop-shadow-lg max-w-4xl mx-auto leading-relaxed transition-all duration-300">
+                        {getNarration()}
+                    </p>
+                </div>
+
+                {/* Close Button */}
+                <button onClick={onClose} className="absolute top-6 right-6 z-50 p-2 rounded-full bg-white/10 hover:bg-white/20 transition-colors backdrop-blur-md group">
+                    <span className="material-symbol text-white group-hover:scale-110 transition-transform">close</span>
+                </button>
+
+                {/* Progress Bar */}
+                <div className="absolute bottom-0 left-0 right-0 h-1.5 bg-[#111] z-50">
+                    <div 
+                        className="h-full bg-white transition-all duration-100 ease-linear"
+                        style={{ width: `${(currentTime / DURATION) * 100}%` }}
+                    />
+                </div>
+                
+                {/* Controls */}
+                <div className="absolute bottom-4 right-6 flex gap-4 z-50">
+                    <button onClick={() => setIsPlaying(!isPlaying)} className="text-white hover:text-[#A8C7FA]">
+                        <span className="material-symbol">{isPlaying ? 'pause' : 'play_arrow'}</span>
+                    </button>
+                </div>
+
+            </div>
+        </div>
+    );
 };
 
 const SUPPORTED_LANGUAGES = [
@@ -307,9 +406,10 @@ const App: React.FC = () => {
   const [screen, setScreen] = useState<AppScreen>(AppScreen.INTRO);
   const [selectedLanguage, setSelectedLanguage] = useState(SUPPORTED_LANGUAGES[0]);
   
-  // Tour State
-  const [showTour, setShowTour] = useState(false);
-  const [tourStep, setTourStep] = useState(0);
+  // New Modals State
+  const [showTechModal, setShowTechModal] = useState(false);
+  const [showDemoModal, setShowDemoModal] = useState(false);
+  const [showAIReasoning, setShowAIReasoning] = useState(false);
 
   // Recording State
   const [audioBlob, setAudioBlob] = useState<Blob | null>(null);
@@ -345,23 +445,25 @@ const App: React.FC = () => {
 
   // --- Logic ---
 
-  const startTour = () => {
-    setTourStep(0);
-    setShowTour(true);
+  // Sample Data Logic
+  const loadSampleData = () => {
+      setScreen(AppScreen.ANALYZING);
+      setAnalysisStep(0);
+      const stepInterval = setInterval(() => {
+          setAnalysisStep(prev => prev + 1);
+      }, 600); // Faster for demo
+
+      setTimeout(() => {
+          clearInterval(stepInterval);
+          setAnalysisResult(SAMPLE_ANALYSIS_RESULT);
+          setScreen(AppScreen.RESULTS);
+      }, 3500);
   };
 
-  const nextTourStep = () => {
-    if (tourStep < TOUR_STEPS.length - 1) {
-      setTourStep(prev => prev + 1);
-    } else {
-      setShowTour(false);
-    }
-  };
-
-  const prevTourStep = () => {
-    if (tourStep > 0) {
-      setTourStep(prev => prev - 1);
-    }
+  const exportPDF = () => {
+      if (analysisResult) {
+        generatePDF(analysisResult);
+      }
   };
 
   const startRecording = async () => {
@@ -694,15 +796,9 @@ const App: React.FC = () => {
       {/* Background Ambience - Reduced size on mobile to prevent overflow/glitch */}
       <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[300px] h-[300px] sm:w-[600px] sm:h-[600px] lg:w-[800px] bg-blue-500/10 blur-[80px] sm:blur-[120px] rounded-full pointer-events-none"></div>
       
-      {/* Tour Overlay */}
-      {showTour && (
-        <TourOverlay 
-          stepIndex={tourStep} 
-          onNext={nextTourStep} 
-          onPrev={prevTourStep}
-          onSkip={() => setShowTour(false)}
-        />
-      )}
+      {/* Modals */}
+      {showTechModal && <TechModal onClose={() => setShowTechModal(false)} />}
+      {showDemoModal && <CinematicDemoModal onClose={() => setShowDemoModal(false)} />}
 
       {/* Header Area (Language) */}
       <div className="w-full flex justify-end p-4 sm:p-6 z-20 relative shrink-0">
@@ -754,11 +850,13 @@ const App: React.FC = () => {
               </span>
             </p>
             
-            {/* Tour Button */}
-            <button onClick={startTour} className="inline-flex items-center gap-2 text-[#A8C7FA] hover:text-[#D3E3FD] font-medium transition-colors text-sm sm:text-base">
-              <span className="material-symbol">play_circle</span>
-              How it works
-            </button>
+            {/* Tour & Demo Buttons */}
+            <div className="flex items-center justify-center gap-4">
+                <button onClick={() => setShowDemoModal(true)} className="inline-flex items-center gap-2 text-[#A8C7FA] hover:text-[#D3E3FD] font-medium transition-colors text-sm sm:text-base">
+                <span className="material-symbol">smart_display</span>
+                Watch Demo
+                </button>
+            </div>
           </div>
 
           {/* Chips */}
@@ -771,45 +869,68 @@ const App: React.FC = () => {
           </div>
 
           {/* Buttons */}
-          <div className="flex flex-col sm:flex-row gap-4 w-full max-w-md mt-4 sm:mt-8 px-4">
-            <button 
-              data-tour="start-btn"
-              onClick={() => setScreen(AppScreen.RECORDING)}
-              className="w-full sm:flex-1 h-14 sm:h-16 rounded-full bg-[#D3E3FD] hover:bg-[#C4D7FC] text-[#041E49] font-medium text-base sm:text-lg flex items-center justify-center gap-2 transition-all hover:scale-105 active:scale-95 border border-transparent"
-            >
-              <span className="material-symbol">mic</span>
-              Start Screening
-            </button>
-            
-            <div className="w-full sm:flex-1 relative">
-              <button 
-                  data-tour="upload-btn"
-                  onClick={() => setScreen(AppScreen.UPLOAD_CONFIG)}
-                  className="w-full h-14 sm:h-16 rounded-full bg-[#1E1F20] hover:bg-[#28292A] text-[#E3E3E3] font-medium text-base sm:text-lg flex items-center justify-center gap-2 border border-[#444746] transition-all hover:border-gray-400 active:scale-95"
-              >
-                  <span className="material-symbol">upload_file</span>
-                  Upload Data
-              </button>
-              {/* Info Icon */}
-              <div className="absolute -top-2 -right-2 group z-20">
-                  <div 
-                      data-tour="upload-info"
-                      className="bg-[#444746] text-gray-200 rounded-full w-6 h-6 flex items-center justify-center shadow-lg cursor-help hover:bg-[#5E5F60] transition-colors"
-                  >
-                      <span className="material-symbol text-[14px]">info</span>
-                  </div>
-              </div>
+          <div className="flex flex-col gap-4 w-full max-w-md mt-4 sm:mt-8 px-4">
+            <div className="flex flex-col sm:flex-row gap-4 w-full">
+                <button 
+                data-tour="start-btn"
+                onClick={() => setScreen(AppScreen.RECORDING)}
+                className="w-full sm:flex-1 h-14 sm:h-16 rounded-full bg-[#D3E3FD] hover:bg-[#C4D7FC] text-[#041E49] font-medium text-base sm:text-lg flex items-center justify-center gap-2 transition-all hover:scale-105 active:scale-95 border border-transparent shadow-xl"
+                >
+                <span className="material-symbol">mic</span>
+                Start Screening
+                </button>
+                
+                <div className="w-full sm:flex-1 relative">
+                <button 
+                    data-tour="upload-btn"
+                    onClick={() => setScreen(AppScreen.UPLOAD_CONFIG)}
+                    className="w-full h-14 sm:h-16 rounded-full bg-[#1E1F20] hover:bg-[#28292A] text-[#E3E3E3] font-medium text-base sm:text-lg flex items-center justify-center gap-2 border border-[#444746] transition-all hover:border-gray-400 active:scale-95"
+                >
+                    <span className="material-symbol">upload_file</span>
+                    Upload Data
+                </button>
+                {/* Info Icon */}
+                <div className="absolute -top-2 -right-2 group z-20">
+                    <div 
+                        data-tour="upload-info"
+                        className="bg-[#444746] text-gray-200 rounded-full w-6 h-6 flex items-center justify-center shadow-lg cursor-help hover:bg-[#5E5F60] transition-colors"
+                    >
+                        <span className="material-symbol text-[14px]">info</span>
+                    </div>
+                </div>
+                </div>
             </div>
+            {/* Try Sample Button */}
+             <button 
+                onClick={loadSampleData}
+                className="w-full h-10 sm:h-12 rounded-full bg-transparent hover:bg-white/5 text-[#A8C7FA] font-medium text-sm border border-[#A8C7FA]/30 flex items-center justify-center gap-2 transition-all"
+            >
+                <span className="material-symbol text-[18px]">science</span>
+                Try with Sample Data (Instant)
+            </button>
           </div>
 
         </div>
       </div>
 
-      {/* Footer */}
-      <div className="p-4 sm:pb-8 text-center z-10 w-full shrink-0">
-        <p className="text-[10px] sm:text-xs text-gray-600">
-          Privacy First • Secure Processing • Clinical Standard
-        </p>
+      {/* Footer / Social Proof */}
+      <div className="p-4 sm:pb-8 text-center z-10 w-full shrink-0 space-y-4">
+        <div className="flex flex-col items-center justify-center gap-2">
+            <p className="text-[10px] text-gray-500 uppercase tracking-widest">Trusted Research</p>
+            <div className="flex gap-4 opacity-50 grayscale hover:grayscale-0 transition-all duration-500">
+                 {/* Mock Logos */}
+                 <div className="h-6 w-20 bg-white/10 rounded flex items-center justify-center text-[8px] font-bold">HealthTech</div>
+                 <div className="h-6 w-20 bg-white/10 rounded flex items-center justify-center text-[8px] font-bold">MedAI</div>
+                 <div className="h-6 w-20 bg-white/10 rounded flex items-center justify-center text-[8px] font-bold">ClinicalJS</div>
+            </div>
+        </div>
+        <div className="flex items-center justify-center gap-4 text-xs text-gray-600">
+            <span>Privacy First</span>
+            <span>•</span>
+            <span>Secure Processing</span>
+            <span>•</span>
+            <button onClick={() => setShowTechModal(true)} className="text-[#A8C7FA] hover:underline">View Architecture</button>
+        </div>
       </div>
     </div>
   );
@@ -1009,23 +1130,42 @@ const App: React.FC = () => {
     </div>
   );
 
-  const renderAnalyzing = () => (
-    <div className="min-h-[100dvh] flex flex-col items-center justify-center bg-[#131314] p-6 text-center w-full">
-      <div className="relative w-24 h-24 sm:w-32 sm:h-32 mb-8 sm:mb-12">
-         {/* Custom Spinner */}
-         <svg className="animate-spin w-full h-full text-[#A8C7FA]" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-          <circle className="opacity-10" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-        </svg>
-      </div>
-      <h3 className="text-2xl sm:text-3xl text-white font-normal mb-4">Analyzing Biomarkers</h3>
-      <div className="h-8">
-        <p className="text-[#A8C7FA] text-base sm:text-lg animate-pulse font-medium px-4">
-          {["Processing audio waveform...", "Detecting micro-tremors...", "Analyzing facial syntax...", "Correlating multimodal data...", "Generating insights..."][analysisStep % 5]}
-        </p>
-      </div>
-    </div>
-  );
+  const renderAnalyzing = () => {
+    // Helper to get the correct icon for each step
+    const getAnalysisIcon = (step: number) => {
+        // Map step (0-4) to icon
+        // 0: Extracting audio features... -> graphic_eq
+        // 1: Analyzing facial microsignals... -> face
+        // 2: Correlating multimodal data... -> model_training (updated)
+        // 3: Running clinical models... -> neurology
+        // 4: Finalizing report... -> check_circle
+        const icons = ['graphic_eq', 'face', 'model_training', 'neurology', 'check_circle'];
+        return icons[step % icons.length] || 'hourglass_empty';
+    };
+
+    return (
+        <div className="min-h-[100dvh] flex flex-col items-center justify-center bg-[#131314] p-6 text-center w-full">
+          <div className="relative w-24 h-24 sm:w-32 sm:h-32 mb-8 sm:mb-12">
+             {/* Custom Spinner */}
+             <svg className="animate-spin w-full h-full text-[#A8C7FA]" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+              <circle className="opacity-10" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+            </svg>
+            <div className="absolute inset-0 flex items-center justify-center">
+                 <span className="material-symbol text-4xl sm:text-5xl text-white animate-pulse transition-all duration-300">
+                     {getAnalysisIcon(analysisStep)}
+                 </span>
+            </div>
+          </div>
+          <h3 className="text-2xl sm:text-3xl text-white font-normal mb-4">Analyzing Biomarkers</h3>
+          <div className="h-8">
+            <p className="text-[#A8C7FA] text-base sm:text-lg animate-pulse font-medium px-4">
+              {["Extracting audio features...", "Analyzing facial microsignals...", "Correlating multimodal data...", "Running clinical models...", "Finalizing report..."][analysisStep % 5]}
+            </p>
+          </div>
+        </div>
+    );
+  };
 
   const renderResults = () => {
     if (!analysisResult) return null;
@@ -1039,8 +1179,11 @@ const App: React.FC = () => {
              <h1 className="text-lg sm:text-xl font-medium text-white">Health Insights</h1>
            </div>
            <div className="flex gap-2">
-             <button onClick={() => setScreen(AppScreen.INTRO)} className="px-3 py-1.5 sm:px-4 sm:py-2 rounded-full hover:bg-[#28292A] text-xs sm:text-sm font-medium text-gray-300">
+             <button onClick={() => setScreen(AppScreen.INTRO)} className="px-3 py-1.5 sm:px-4 sm:py-2 rounded-full hover:bg-[#28292A] text-xs sm:text-sm font-medium text-gray-300 border border-transparent hover:border-[#444746]">
                New Scan
+             </button>
+             <button onClick={exportPDF} className="px-3 py-1.5 sm:px-4 sm:py-2 rounded-full hover:bg-[#28292A] text-xs sm:text-sm font-medium text-[#A8C7FA] border border-[#A8C7FA]/30 hidden sm:block">
+               Export PDF
              </button>
              <button onClick={() => setScreen(AppScreen.CHAT)} className="px-4 py-1.5 sm:px-6 sm:py-2 rounded-full bg-[#A8C7FA] text-[#041E49] text-xs sm:text-sm font-bold shadow-lg hover:bg-[#D3E3FD] transition-colors hidden md:block">
                Ask Assistant
@@ -1054,15 +1197,35 @@ const App: React.FC = () => {
             
             {/* Left Col: Score & Summary (4 cols) */}
             <div className="lg:col-span-4 space-y-4 sm:space-y-6">
-              <div className="bg-[#1E1F20] rounded-[24px] sm:rounded-[32px] p-6 sm:p-8 border border-[#444746] relative overflow-hidden text-center lg:text-left h-full">
-                <div className="flex flex-col items-center lg:items-start z-10 relative">
+              <div className="bg-[#1E1F20] rounded-[24px] sm:rounded-[32px] p-6 sm:p-8 border border-[#444746] relative overflow-hidden text-center lg:text-left h-full flex flex-col">
+                <div className="flex flex-col items-center lg:items-start z-10 relative flex-1">
                    <div className="text-7xl sm:text-8xl md:text-9xl font-medium text-white tracking-tighter mb-2">
                      {analysisResult.overall_wellness_score}
                    </div>
                    <span className="text-xs sm:text-sm font-bold text-[#A8C7FA] uppercase tracking-widest mb-4 sm:mb-6 block">Wellness Score</span>
-                   <p className="text-[#C4C7C5] text-base sm:text-lg leading-relaxed">
+                   <p className="text-[#C4C7C5] text-base sm:text-lg leading-relaxed mb-6">
                      {analysisResult.summary}
                    </p>
+                   
+                   {/* AI Reasoning Expandable */}
+                   <button 
+                    onClick={() => setShowAIReasoning(!showAIReasoning)}
+                    className="mt-auto text-sm text-[#A8C7FA] flex items-center gap-1 hover:underline"
+                   >
+                       <span className="material-symbol text-[18px]">{showAIReasoning ? 'expand_less' : 'expand_more'}</span>
+                       View AI Analysis Details
+                   </button>
+                   
+                   {showAIReasoning && (
+                       <div className="mt-4 p-4 bg-[#131314] rounded-xl text-left border border-[#444746] animate-fade-in-up w-full">
+                           <h4 className="text-xs font-bold text-gray-400 uppercase mb-2">Gemini 3 Pro Reasoning</h4>
+                           <p className="text-xs text-gray-300 leading-relaxed">
+                               AI detected correlation between vocal jitter and respiratory patterns. 
+                               Confidence level: <strong>{analysisResult.confidence_level}</strong>. 
+                               Analysis prioritized acoustic features indicative of {analysisResult.domain_scores.neurological.concern_level === 'low' ? 'stable' : 'variable'} neurological function.
+                           </p>
+                       </div>
+                   )}
                 </div>
                 {/* Decoration */}
                 <div className="absolute -bottom-10 -right-10 opacity-5 pointer-events-none">
@@ -1117,7 +1280,7 @@ const App: React.FC = () => {
 
           </div>
           
-          <div className="mt-8 sm:mt-12 text-center pb-20 md:pb-0">
+          <div className="mt-8 sm:mt-12 text-center pb-40 md:pb-0">
             <p className="text-xs text-[#8E918F] max-w-2xl mx-auto px-4">
               DISCLAIMER: {analysisResult.disclaimer}
             </p>
