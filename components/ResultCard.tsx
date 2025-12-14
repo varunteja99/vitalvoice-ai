@@ -27,12 +27,12 @@ const ResultCard: React.FC<ResultCardProps> = ({ title, data, delay }) => {
 
   const getIcon = (title: string) => {
     switch (title.toLowerCase()) {
-      case 'neurological': return 'neurology';
-      case 'mental_health': return 'psychology';
-      case 'respiratory': return 'pulmonology';
-      case 'cardiovascular': return 'cardiology';
-      case 'metabolic': return 'vital_signs';
-      case 'hydration': return 'water_drop';
+      case 'neurological': return 'psychology'; // Brain/Mind
+      case 'mental_health': return 'mood'; // Face/Mood
+      case 'respiratory': return 'air'; // Breath/Air
+      case 'cardiovascular': return 'monitor_heart'; // Heart rate monitor
+      case 'metabolic': return 'bolt'; // Energy/Power
+      case 'hydration': return 'water_drop'; // Water
       default: return 'health_and_safety';
     }
   };
