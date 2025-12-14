@@ -226,172 +226,6 @@ const TechModal: React.FC<{ onClose: () => void }> = ({ onClose }) => (
     </div>
 );
 
-// High-End Cinematic Demo Modal (Apple-style Ad Simulator)
-const CinematicDemoModal: React.FC<{ onClose: () => void }> = ({ onClose }) => {
-    const [currentTime, setCurrentTime] = useState(0);
-    const [isPlaying, setIsPlaying] = useState(false);
-    const [hasStarted, setHasStarted] = useState(false);
-    const [isMuted, setIsMuted] = useState(false);
-    
-    const audioRef = useRef<HTMLAudioElement>(null);
-    
-    // 45 Seconds Duration - Detailed Walkthrough
-    const DURATION = 45000; 
-
-    // Handle initial start
-    const handleStart = () => {
-        setHasStarted(true);
-        setIsPlaying(true);
-        if (audioRef.current) {
-            audioRef.current.volume = 0.5; // Moderate volume
-            audioRef.current.currentTime = 0;
-            const playPromise = audioRef.current.play();
-            if (playPromise !== undefined) {
-                playPromise
-                    .then(() => {
-                        console.log("Audio playback started successfully");
-                    })
-                    .catch(error => {
-                        console.error("Audio playback failed:", error);
-                        // If playback fails (e.g., codec issue), we continue visual demo anyway.
-                    });
-            }
-        }
-    };
-
-    const togglePlay = () => {
-        if (isPlaying) {
-            setIsPlaying(false);
-            if (audioRef.current) audioRef.current.pause();
-        } else {
-            setIsPlaying(true);
-            if (audioRef.current) audioRef.current.play();
-        }
-    };
-
-    const toggleMute = () => {
-        if (audioRef.current) {
-            audioRef.current.muted = !isMuted;
-            setIsMuted(!isMuted);
-        }
-    };
-
-    useEffect(() => {
-        if (!hasStarted) return;
-
-        let animationFrameId: number;
-        let lastTimestamp: number;
-
-        const loop = (timestamp: number) => {
-            if (!lastTimestamp) lastTimestamp = timestamp;
-            const delta = timestamp - lastTimestamp;
-            
-            if (isPlaying) {
-                setCurrentTime(prev => {
-                    const next = prev + delta;
-                    if (next >= DURATION) {
-                        setIsPlaying(false);
-                        return DURATION;
-                    }
-                    return next;
-                });
-            }
-            lastTimestamp = timestamp;
-            animationFrameId = requestAnimationFrame(loop);
-        };
-
-        if (isPlaying && currentTime < DURATION) {
-            animationFrameId = requestAnimationFrame(loop);
-        }
-
-        return () => cancelAnimationFrame(animationFrameId);
-    }, [isPlaying, currentTime, hasStarted]);
-
-    const restart = () => {
-        setCurrentTime(0);
-        setIsPlaying(true);
-        if (audioRef.current) {
-            audioRef.current.currentTime = 0;
-            audioRef.current.play().catch(e => console.error("Restart play failed", e));
-        }
-    };
-
-    // Helper to check precise time ranges
-    const isBetween = (startS: number, endS: number) => {
-        const ms = currentTime;
-        return ms >= startS * 1000 && ms < endS * 1000;
-    };
-
-    // Narration Script
-    const getNarration = () => {
-        const s = currentTime / 1000;
-        // Why Important (0-10s)
-        if (s < 5) return "Millions suffer from preventable conditions due to lack of early screening.";
-        if (s < 10) return "What if your voice could reveal hidden health signals before it's too late?";
-        // Intro (10-15s)
-        if (s < 15) return "Introducing VitalVoice AI. Clinical-grade screening in your pocket.";
-        // How To (15-30s)
-        if (s < 20) return "It's simple. Just tap 'Start' and speak naturally for 30 seconds.";
-        if (s < 25) return "Our AI analyzes micro-tremors, breath patterns, and pitch dynamics.";
-        if (s < 30) return "Powered by Gemini 3 Pro, it correlates audio with optional facial cues.";
-        // Results & Chat (30-40s)
-        if (s < 35) return "Instantly receive a comprehensive wellness score and biomarkers.";
-        if (s < 40) return "Have questions? Chat with your personalized AI health assistant.";
-        // Outro (40-45s)
-        return "VitalVoice AI. Listen to your health.";
-    }
-
-    return (
-        <div className="fixed inset-0 z-[200] bg-black flex flex-col items-center justify-center font-sans overflow-hidden">
-            {/* Audio Element - Hidden but present with multiple sources for reliability */}
-            <audio 
-                ref={audioRef} 
-                loop 
-                preload="auto"
-                crossOrigin="anonymous"
-                style={{ position: 'absolute', width: '1px', height: '1px', opacity: 0, pointerEvents: 'none' }}
-            >
-                {/* Primary: Pixabay Ambient (MP3) */}
-                <source src="https://cdn.pixabay.com/audio/2022/03/24/audio_3b5d2b78b8.mp3" type="audio/mpeg" />
-                {/* Fallback 1: Google Sounds (OGG) - Rain/Nature usually safe fallback */}
-                <source src="https://actions.google.com/sounds/v1/water/rain_on_roof.ogg" type="audio/ogg" />
-                {/* Fallback 2: Different Pixabay track */}
-                <source src="https://cdn.pixabay.com/audio/2021/11/01/audio_00fa5593f3.mp3" type="audio/mpeg" />
-            </audio>
-
-            {!hasStarted ? (
-                // --- START SCREEN (Ensures User Interaction for Audio) ---
-                <div className="absolute inset-0 z-[210] flex flex-col items-center justify-center bg-black/90 backdrop-blur-sm p-6 text-center animate-fade-in-up">
-                    <span className="material-symbol text-8xl text-transparent bg-clip-text bg-gradient-to-tr from-[#4285F4] to-[#9B72CB] mb-8">graphic_eq</span>
-                    <h1 className="text-4xl md:text-5xl font-bold text-white mb-4">Experience VitalVoice</h1>
-                    <p className="text-gray-400 text-lg mb-12 max-w-md">
-                        A 45-second journey through the future of voice-based health diagnostics.
-                        <br/><span className="text-sm opacity-60 mt-2 block">(Sound On Recommended)</span>
-                    </p>
-                    <div className="flex flex-col gap-4">
-                        <button 
-                            onClick={handleStart}
-                            className="group relative inline-flex items-center justify-center px-8 py-4 font-bold text-white transition-all duration-200 bg-[#4285F4] font-lg rounded-full hover:bg-[#3367D6] hover:scale-105 shadow-lg shadow-blue-500/30"
-                        >
-                            <span className="material-symbol mr-2 text-2xl group-hover:animate-pulse">play_arrow</span>
-                            Start Experience
-                        </button>
-                    </div>
-
-                    <button onClick={onClose} className="mt-8 text-sm text-gray-500 hover:text-white transition-colors">
-                        Close Demo
-                    </button>
-                </div>
-            ) : (
-                // --- CINEMATIC CONTENT ---
-                <div className="relative w-full h-full max-w-[100vw] max-h-[100vh] flex flex-col items-center justify-center">
-                    {/* ... (Existing Cinematic Demo Logic maintained) ... */}
-                </div>
-            )}
-        </div>
-    );
-};
-
 const SUPPORTED_LANGUAGES = [
   { code: 'en-US', name: 'English (US)', flag: '🇺🇸', prompt: "Tell me about a memorable meal you've had recently. Describe the flavors, the place, and who you were with." },
   { code: 'en-GB', name: 'English (UK)', flag: '🇬🇧', prompt: "Tell me about a memorable meal you've had recently. Describe the flavors, the place, and who you were with." },
@@ -425,7 +259,6 @@ const App: React.FC = () => {
   
   // New Modals State
   const [showTechModal, setShowTechModal] = useState(false);
-  const [showDemoModal, setShowDemoModal] = useState(false);
   const [showLimitModal, setShowLimitModal] = useState(false);
 
   // Recording State
@@ -1118,7 +951,7 @@ const App: React.FC = () => {
               <br/><span className="text-xs sm:text-sm mt-2 block opacity-70">Selected Language: <span className="text-[#A8C7FA] font-medium">{selectedLanguage.name}</span></span>
             </p>
             <div className="flex items-center justify-center gap-4">
-                <button onClick={() => setShowDemoModal(true)} className="inline-flex items-center gap-2 text-[#A8C7FA] hover:text-[#D3E3FD] font-medium transition-colors text-sm sm:text-base"><span className="material-symbol">smart_display</span>Watch Demo</button>
+                <button onClick={() => window.open("https://www.youtube.com/watch?v=vuwO8PJ1A4I", "_blank")} className="inline-flex items-center gap-2 text-[#A8C7FA] hover:text-[#D3E3FD] font-medium transition-colors text-sm sm:text-base"><span className="material-symbol">smart_display</span>Watch Demo</button>
             </div>
           </div>
           <div className="flex gap-2 sm:gap-3 justify-center flex-wrap px-4">
@@ -1267,7 +1100,6 @@ const App: React.FC = () => {
             <div className="absolute bottom-[-10%] right-[-10%] w-[600px] h-[600px] bg-[#9B72CB]/5 rounded-full blur-[100px]"></div>
         </div>
         {showTechModal && <TechModal onClose={() => setShowTechModal(false)} />}
-        {showDemoModal && <CinematicDemoModal onClose={() => setShowDemoModal(false)} />}
         {showLimitModal && <LimitModal onClose={() => setShowLimitModal(false)} />}
         {screen === AppScreen.INTRO && renderIntro()}
         {screen === AppScreen.RECORDING && renderRecording()}
