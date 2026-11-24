@@ -99,8 +99,25 @@ const validateAudioBlob = async (audioBlob: Blob): Promise<{ isValid: boolean; e
 
 // --- Components ---
 
-// Simple Markdown Renderer
+// Simple Markdown Renderer (Safe React Elements without dangerouslySetInnerHTML)
 const MarkdownRenderer: React.FC<{ content: string }> = ({ content }) => {
+  const renderInlineTokens = (text: string): React.ReactNode[] => {
+    const tokenRegex = /(\*\*.*?\*\*|\*.*?\*|`[^`]+`)/g;
+    const parts = text.split(tokenRegex);
+    return parts.map((part, index) => {
+      if (part.startsWith('**') && part.endsWith('**') && part.length >= 4) {
+        return <strong key={index} className="text-white font-semibold">{part.slice(2, -2)}</strong>;
+      }
+      if (part.startsWith('*') && part.endsWith('*') && part.length >= 2) {
+        return <em key={index} className="text-gray-300">{part.slice(1, -1)}</em>;
+      }
+      if (part.startsWith('`') && part.endsWith('`') && part.length >= 2) {
+        return <code key={index} className="bg-[#2E2F30] px-1 rounded text-sm font-mono text-[#E8DEF8]">{part.slice(1, -1)}</code>;
+      }
+      return part;
+    });
+  };
+
   const processText = (text: string) => {
     return text.split('\n').map((line, lineIndex) => {
       if (line.startsWith('## ')) return <h3 key={lineIndex} className="text-lg font-bold text-[#A8C7FA] mt-4 mb-2">{line.replace('## ', '')}</h3>;
@@ -110,20 +127,13 @@ const MarkdownRenderer: React.FC<{ content: string }> = ({ content }) => {
         return (
           <div key={lineIndex} className="flex items-start gap-2 mb-1 ml-2">
              <span className="text-[#A8C7FA] mt-1.5">•</span>
-             <p className="flex-1 text-[#E3E3E3] leading-relaxed" dangerouslySetInnerHTML={{ __html: formatInlineStyles(itemContent) }} />
+             <p className="flex-1 text-[#E3E3E3] leading-relaxed">{renderInlineTokens(itemContent)}</p>
           </div>
         );
       }
       if (line.trim() === '') return <div key={lineIndex} className="h-2"></div>;
-      return <p key={lineIndex} className="mb-2 leading-relaxed" dangerouslySetInnerHTML={{ __html: formatInlineStyles(line) }} />;
+      return <p key={lineIndex} className="mb-2 leading-relaxed">{renderInlineTokens(line)}</p>;
     });
-  };
-
-  const formatInlineStyles = (text: string) => {
-    return text
-      .replace(/\*\*(.*?)\*\*/g, '<strong class="text-white font-semibold">$1</strong>')
-      .replace(/\*(.*?)\*/g, '<em class="text-gray-300">$1</em>')
-      .replace(/`([^`]+)`/g, '<code class="bg-[#2E2F30] px-1 rounded text-sm font-mono text-[#E8DEF8]">$1</code>');
   };
 
   return <div className="markdown-content">{processText(content)}</div>;
@@ -260,6 +270,7 @@ const App: React.FC = () => {
   // New Modals State
   const [showTechModal, setShowTechModal] = useState(false);
   const [showLimitModal, setShowLimitModal] = useState(false);
+  const [appError, setAppError] = useState<string | null>(null);
 
   // Recording State
   const [audioBlob, setAudioBlob] = useState<Blob | null>(null);
@@ -443,7 +454,7 @@ const App: React.FC = () => {
       setTimer(30);
     } catch (err) {
       console.error("Error accessing microphone:", err);
-      alert("Microphone access is required.");
+      setRecordingError("Microphone access is required to record your voice sample.");
     }
   };
 
@@ -593,7 +604,7 @@ const App: React.FC = () => {
       } catch (e) {
         console.error(e);
         clearInterval(stepInterval);
-        alert("Validation analysis failed. Please check file format.");
+        setAppError(e instanceof Error ? e.message : "Validation analysis failed. Please check file format.");
         setScreen(AppScreen.UPLOAD_CONFIG);
       }
     };
@@ -625,13 +636,15 @@ const App: React.FC = () => {
           setScreen(AppScreen.RESULTS);
         } catch (error) {
           console.error(error);
-          alert("Analysis failed. Please try again.");
+          clearInterval(stepInterval);
+          setAppError(error instanceof Error ? error.message : "Analysis failed. Please try again.");
           setScreen(AppScreen.INTRO);
         }
       };
     } catch (e) {
       console.error(e);
       clearInterval(stepInterval);
+      setAppError(e instanceof Error ? e.message : "Analysis failed. Please try again.");
       setScreen(AppScreen.INTRO);
     }
   };
@@ -667,7 +680,7 @@ const App: React.FC = () => {
       setIsChatRecording(true);
     } catch (err) {
       console.error("Error accessing microphone for chat:", err);
-      alert("Microphone access is required.");
+      setAppError("Microphone access is required for voice chat.");
     }
   };
 
@@ -951,7 +964,7 @@ const App: React.FC = () => {
               <br/><span className="text-xs sm:text-sm mt-2 block opacity-70">Selected Language: <span className="text-[#A8C7FA] font-medium">{selectedLanguage.name}</span></span>
             </p>
             <div className="flex items-center justify-center gap-4">
-                <button onClick={() => window.open("https://www.youtube.com/watch?v=vuwO8PJ1A4I", "_blank")} className="inline-flex items-center gap-2 text-[#A8C7FA] hover:text-[#D3E3FD] font-medium transition-colors text-sm sm:text-base"><span className="material-symbol">smart_display</span>Watch Demo</button>
+                <a href="https://www.youtube.com/watch?v=vuwO8PJ1A4I" target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-2 text-[#A8C7FA] hover:text-[#D3E3FD] font-medium transition-colors text-sm sm:text-base"><span className="material-symbol">smart_display</span>Watch Demo</a>
             </div>
           </div>
           <div className="flex gap-2 sm:gap-3 justify-center flex-wrap px-4">
@@ -1099,6 +1112,19 @@ const App: React.FC = () => {
             <div className="absolute top-[-10%] left-[50%] -translate-x-1/2 w-[800px] h-[800px] bg-[#4285F4]/5 rounded-full blur-[120px]"></div>
             <div className="absolute bottom-[-10%] right-[-10%] w-[600px] h-[600px] bg-[#9B72CB]/5 rounded-full blur-[100px]"></div>
         </div>
+        {appError && (
+          <div className="fixed top-4 left-1/2 -translate-x-1/2 z-[200] w-full max-w-md px-4 animate-fade-in-up">
+            <div className="bg-[#1E1F20] border border-red-500/40 text-red-200 px-4 py-3 rounded-2xl shadow-2xl flex items-center justify-between gap-3">
+              <div className="flex items-center gap-2 text-sm">
+                <span className="material-symbol text-red-400">error</span>
+                <span>{appError}</span>
+              </div>
+              <button onClick={() => setAppError(null)} className="text-gray-400 hover:text-white">
+                <span className="material-symbol text-lg">close</span>
+              </button>
+            </div>
+          </div>
+        )}
         {showTechModal && <TechModal onClose={() => setShowTechModal(false)} />}
         {showLimitModal && <LimitModal onClose={() => setShowLimitModal(false)} />}
         {screen === AppScreen.INTRO && renderIntro()}
